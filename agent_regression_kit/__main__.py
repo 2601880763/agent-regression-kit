@@ -1,3 +1,4 @@
+from .runner import run_suite
 import argparse
 import json
 import sys
@@ -102,23 +103,65 @@ def main():
         help="检查场景文件的基本结构",
     )
     validate_command.add_argument("suite", help="场景文件路径")
+    mock_command = commands.add_parser(
+        "run-mock",
+        help="使用模拟记录执行评测",
+    )
+    mock_command.add_argument("suite", help="场景文件路径")
+    mock_command.add_argument(
+        "--observations",
+        required=True,
+        help="模拟调用记录文件",
+    )
+    mock_command.add_argument(
+        "--output",
+        required=True,
+        help="报告保存路径",
+    )
 
     args = parser.parse_args()
 
     try:
         suite = load_suite(args.suite)
-    except (OSError, ValueError) as error:
-        print(f"校验失败：{error}", file=sys.stderr)
-        return 2
 
-    result = {
-        "validation": "VALID",
-        "suite": suite["name"],
-        "case_count": len(suite["cases"]),
-        "evaluation_executed": False,
-    }
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+        if args.command == "validate":
+            result = {
+                "validation": "VALID",
+                "suite": suite["name"],
+                "case_count": len(suite["cases"]),
+                "evaluation_executed": False,
+            }
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+
+        observations = json.loads(
+            Path(args.observations).read_text(encoding="utf-8-sig")
+        )
+        if not isinstance(observations, dict):
+            raise ValueError("模拟记录最外层必须是 JSON 对象")
+
+        report = run_suite(suite, observations)
+
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
+        print(f"模拟评测报告已保存：{output}")
+
+        counts = report["summary"]
+        if counts["ERROR"] or counts["INCONCLUSIVE"]:
+            return 2
+        if counts["FAIL"]:
+            return 1
+        return 0
+
+    except (OSError, ValueError) as error:
+        print(f"执行失败：{error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
