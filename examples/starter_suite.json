@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "name": "业务Agent基础场景",
+  "cases": [
+    {
+      "id": "search_shops",
+      "description": "用户搜索火锅店时，应调用搜索工具",
+      "messages": [
+        "帮我找几家火锅店"
+      ],
+      "checks": [
+        {
+          "kind": "tool_used",
+          "expected": {
+            "name": "search_shops"
+          }
+        }
+      ]
+    }
+  ]
+}
