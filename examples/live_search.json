@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "case_id": "search_shops_keyword",
+  "endpoint": "http://127.0.0.1:8085/ai/chat/stream",
+  "input": "请只搜索名字包含“火锅”的店铺，搜索关键词请使用“火锅”，暂时不要查询详情或优惠券。",
+  "expected_tools": [
+    {
+      "name": "search_shops",
+      "input_parameters": {
+        "keyword": "火锅"
+      }
+    }
+  ]
+}
