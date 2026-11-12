@@ -11,6 +11,9 @@ from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
 
+import argparse
+from urllib.parse import urlparse
+
 
 class NoJudgeModel(DeepEvalBaseLLM):
     """沿用上一轮的保护对象，不调用评审模型。"""
@@ -55,7 +58,7 @@ def read_events(response):
             data_lines.append(line[5:].removeprefix(" "))
 
 
-def call_hmdp(token, message, observed):
+def call_hmdp(token, endpoint, message, observed):
     payload = {
         "conversationId": observed["conversation_id"],
         "message": message,
@@ -64,7 +67,7 @@ def call_hmdp(token, message, observed):
     observed["request_started"] = True
 
     with requests.post(
-        "http://127.0.0.1:8085/ai/chat/stream",
+        endpoint,
         headers={
             "Authorization": token,
             "Accept": "text/event-stream",
@@ -123,13 +126,58 @@ def save_report(report):
 
     return output
 
-def main():
-    token = getpass.getpass("请输入点评登录Token：").strip()
+def load_live_config(path):
+    content = Path(path).read_text(encoding="utf-8-sig")
+    config = json.loads(content)
 
-    message = (
-        "请只搜索名字包含“火锅”的店铺，"
-        "搜索关键词请使用“火锅”，暂时不要查询详情或优惠券。"
+    if not isinstance(config, dict):
+        raise ValueError("配置最外层必须是JSON对象")
+
+    schema_version = config.get("schema_version")
+    if type(schema_version) is not int or schema_version != 1:
+        raise ValueError("目前只支持schema_version为整数1")
+
+    for field in ["case_id", "endpoint", "input"]:
+        value = config.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field}必须是非空字符串")
+
+    endpoint = urlparse(config["endpoint"])
+    if endpoint.scheme not in ["http", "https"] or not endpoint.hostname:
+        raise ValueError("endpoint必须是有效的HTTP或HTTPS地址")
+
+    expected_tools = config.get("expected_tools")
+    if not isinstance(expected_tools, list) or not expected_tools:
+        raise ValueError("expected_tools必须是非空列表")
+
+    for tool in expected_tools:
+        if not isinstance(tool, dict):
+            raise ValueError("每个预期工具必须是JSON对象")
+
+        name = tool.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("预期工具名必须是非空字符串")
+
+        if not isinstance(tool.get("input_parameters"), dict):
+            raise ValueError("input_parameters必须是JSON对象")
+
+    return config
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="通过配置执行真实Agent工具调用评测"
     )
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="配置文件路径，相对项目根目录或使用绝对路径",
+    )
+    args = parser.parse_args()
+
+    project_root = Path(__file__).resolve().parents[1]
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = project_root / config_path
 
     observed = {
         "conversation_id": str(uuid4()),
@@ -147,24 +195,34 @@ def main():
         "created_at": datetime.now(timezone.utc).isoformat(),
         "mode": "live",
         "deepeval_version": version("deepeval"),
-        "case_id": "search_shops_keyword",
-        "input": message,
-        "expected_tools": [
-            {
-                "name": "search_shops",
-                "input_parameters": {"keyword": "火锅"},
-            }
-        ],
+        "config_file": str(config_path),
+        "case_id": None,
+        "endpoint": None,
+        "input": None,
+        "expected_tools": [],
         "status": "ERROR",
         "metric": None,
         "error": None,
     }
 
     try:
+        config = load_live_config(config_path)
+
+        report["case_id"] = config["case_id"]
+        report["endpoint"] = config["endpoint"]
+        report["input"] = config["input"]
+        report["expected_tools"] = config["expected_tools"]
+
+        token = getpass.getpass("请输入点评登录Token：").strip()
         if not token:
             raise ValueError("登录Token不能为空")
 
-        call_hmdp(token, message, observed)
+        call_hmdp(
+            token,
+            config["endpoint"],
+            config["input"],
+            observed,
+        )
 
         if not observed["trace_received"]:
             raise EvidenceUnavailable("没有取得工具调用记录")
@@ -188,39 +246,45 @@ def main():
 
             tool_name = call["toolName"]
 
-            if tool_name == "search_shops":
-                if call.get("argumentsTruncated") is not False:
-                    raise EvidenceUnavailable("搜索参数记录缺失或已截断")
-
-                arguments = call.get("arguments")
-                if not isinstance(arguments, dict):
-                    raise EvidenceUnavailable("没有取得搜索参数对象")
-
-                keyword = arguments.get("keyword")
-                if not isinstance(keyword, str):
-                    raise EvidenceUnavailable("没有取得完整的搜索关键词")
-
-                actual_tools.append(
-                    ToolCall(
-                        name=tool_name,
-                        input_parameters={"keyword": keyword},
-                    )
+            if call.get("argumentsTruncated") is not False:
+                raise EvidenceUnavailable(
+                    f"{tool_name}的参数记录缺失或已截断"
                 )
-            else:
-                actual_tools.append(ToolCall(name=tool_name))
 
-        expected = report["expected_tools"][0]
+            arguments = call.get("arguments")
+            if not isinstance(arguments, dict):
+                raise EvidenceUnavailable(
+                    f"没有取得{tool_name}的参数对象"
+                )
+
+            for expected in config["expected_tools"]:
+                if expected["name"] == tool_name:
+                    for parameter in expected["input_parameters"]:
+                        if parameter not in arguments:
+                            raise EvidenceUnavailable(
+                                f"{tool_name}缺少参数证据：{parameter}"
+                            )
+
+            actual_tools.append(
+                ToolCall(
+                    name=tool_name,
+                    input_parameters=arguments,
+                )
+            )
+
+        expected_tools = [
+            ToolCall(
+                name=tool["name"],
+                input_parameters=tool["input_parameters"],
+            )
+            for tool in config["expected_tools"]
+        ]
 
         case = LLMTestCase(
-            input=message,
+            input=config["input"],
             actual_output=observed["answer"],
             tools_called=actual_tools,
-            expected_tools=[
-                ToolCall(
-                    name=expected["name"],
-                    input_parameters=expected["input_parameters"],
-                )
-            ],
+            expected_tools=expected_tools,
         )
 
         metric = ToolCorrectnessMetric(
@@ -254,7 +318,7 @@ def main():
     except Exception as error:
         report["status"] = "ERROR"
 
-        if isinstance(error, (AgentCallError, ValueError)):
+        if isinstance(error, (AgentCallError, ValueError, OSError)):
             public_message = str(error)
         else:
             public_message = "执行异常，请查看本机终端"
@@ -283,7 +347,8 @@ def main():
         print("报告保存失败：", error)
         return 2
 
-    print("\n评测状态：", report["status"])
+    print("\n场景编号：", report["case_id"])
+    print("评测状态：", report["status"])
     print("评分详情：", report["metric"])
     print("错误详情：", report["error"])
     print("报告已保存：", output)
