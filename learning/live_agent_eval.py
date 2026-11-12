@@ -5,7 +5,7 @@ from uuid import uuid4
 import requests
 from deepeval.metrics import ToolCorrectnessMetric
 from deepeval.models import DeepEvalBaseLLM
-from deepeval.test_case import LLMTestCase, ToolCall
+from deepeval.test_case import LLMTestCase, ToolCall, ToolCallParams
 
 
 class NoJudgeModel(DeepEvalBaseLLM):
@@ -113,7 +113,10 @@ def main():
         print("没有输入Token")
         return 2
 
-    message = "请只搜索名字包含火锅的店铺，暂时不要查询详情或优惠券。"
+    message = (
+        "请只搜索名字包含“火锅”的店铺，"
+        "搜索关键词请使用“火锅”，暂时不要查询详情或优惠券。"
+    )
 
     try:
         answer, calls = call_hmdp(token, message)
@@ -122,18 +125,48 @@ def main():
         print(answer)
 
         print("\n后端实际工具记录：")
+
+        actual_tools = []
+
         for call in calls:
-            print(call["toolName"], "结果状态：", call.get("outcome"))
+            tool_name = call["toolName"]
+
+            print("工具名：", tool_name)
+            print("公开参数：", call.get("arguments"))
+            print("结果状态：", call.get("outcome"))
+
+            if tool_name == "search_shops":
+                if call.get("argumentsTruncated") is not False:
+                    raise ValueError("搜索参数记录缺失、已隐藏或已截断")
+
+                arguments = call.get("arguments")
+                if not isinstance(arguments, dict):
+                    raise ValueError("搜索参数记录格式错误")
+
+                keyword = arguments.get("keyword")
+                if not isinstance(keyword, str):
+                    raise ValueError("没有取得完整的搜索关键词证据")
+
+                actual_tools.append(
+                    ToolCall(
+                        name=tool_name,
+                        input_parameters={"keyword": keyword},
+                    )
+                )
+            else:
+                actual_tools.append(
+                    ToolCall(name=tool_name)
+                )
 
         case = LLMTestCase(
             input=message,
             actual_output=answer,
-            tools_called=[
-                ToolCall(name=call["toolName"])
-                for call in calls
-            ],
+            tools_called=actual_tools,
             expected_tools=[
-                ToolCall(name="get_shop_detail")
+                ToolCall(
+                    name="search_shops",
+                    input_parameters={"keyword": "火锅"},
+                )
             ],
         )
 
@@ -142,7 +175,7 @@ def main():
             eval_mode="llm",
             async_mode=False,
             should_exact_match=True,
-            evaluation_params=[],
+            evaluation_params=[ToolCallParams.INPUT_PARAMETERS],
             threshold=1.0,
         )
         metric.measure(case)
