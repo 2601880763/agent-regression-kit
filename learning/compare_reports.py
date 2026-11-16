@@ -2,7 +2,7 @@ import argparse
 import json
 from collections import Counter
 from pathlib import Path
-
+from datetime import datetime
 
 VALID_STATUSES = {
     "PASS", "FAIL", "ERROR", "INCONCLUSIVE", "SKIPPED"
@@ -154,11 +154,18 @@ def main():
 
         comparison = compare_reports(baseline, current)
 
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(
-            json.dumps(
-                comparison, ensure_ascii=False, indent=2
-            ) + "\n",
+        # 生成时间标签，例如：20241116_143052
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 在原文件名基础上加时间标签
+        # 假设 output 原来是 Path("xxx/comparison.json")
+        stem = output.stem  # "comparison"
+        suffix = output.suffix  # ".json"
+        new_output = output.with_name(f"{stem}_{timestamp}{suffix}")
+
+        new_output.parent.mkdir(parents=True, exist_ok=True)
+        new_output.write_text(
+            json.dumps(comparison, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
 
