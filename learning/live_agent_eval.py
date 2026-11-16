@@ -278,6 +278,16 @@ def run_case(config_path, token=None):
         report["endpoint"] = config["endpoint"]
         report["input"] = config["input"]
         report["expected_tools"] = config["expected_tools"]
+        report["comparison_spec"] = {
+            "version": 1,
+            "endpoint": config["endpoint"],
+            "input": config["input"],
+            "expected_tools": config["expected_tools"],
+            "business_checks": config.get("business_checks", []),
+            "tool_matching": "exact_name_type_and_input_parameters",
+            "threshold": 1.0,
+            "deepeval_version": version("deepeval"),
+        }
 
         if token is None:
             token = getpass.getpass("请输入点评登录Token：").strip()
