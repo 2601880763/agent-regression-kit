@@ -10,5 +10,13 @@
         "keyword": "火锅"
       }
     }
+  ],
+  "business_checks": [
+    {
+      "kind": "tool_outcome",
+      "call_index": 0,
+      "tool_name": "search_shops",
+      "expected": "SUCCEEDED"
+    }
   ]
 }

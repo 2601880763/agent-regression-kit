@@ -163,7 +163,80 @@ def load_live_config(path):
         if not isinstance(tool.get("input_parameters"), dict):
             raise ValueError("input_parameters必须是JSON对象")
 
+    business_checks = config.get("business_checks", [])
+    if not isinstance(business_checks, list):
+        raise ValueError("business_checks必须是列表")
+
+    for check in business_checks:
+        if not isinstance(check, dict):
+            raise ValueError("每个业务检查必须是JSON对象")
+
+        if check.get("kind") != "tool_outcome":
+            raise ValueError("目前只支持tool_outcome业务检查")
+
+        index = check.get("call_index")
+        if type(index) is not int or index < 0:
+            raise ValueError("call_index必须是大于等于0的整数")
+
+        name = check.get("tool_name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("tool_name必须是非空字符串")
+
+        if check.get("expected") not in {
+            "SUCCEEDED", "NO_MATCH", "FAILED"
+        }:
+            raise ValueError(
+                "expected必须是SUCCEEDED、NO_MATCH或FAILED"
+            )
+
     return config
+
+
+def check_tool_outcomes(checks, calls):
+    """根据真实工具记录，逐项检查业务返回状态。"""
+    results = []
+
+    for check in checks:
+        index = check["call_index"]
+
+        result = {
+            "kind": check["kind"],
+            "call_index": index,
+            "tool_name": check["tool_name"],
+            "expected": check["expected"],
+            "actual": None,
+            "status": "INCONCLUSIVE",
+            "reason": "",
+        }
+
+        if index >= len(calls):
+            result["status"] = "FAIL"
+            result["reason"] = "没有发生预期位置的工具调用"
+        else:
+            call = calls[index]
+            actual = call.get("outcome")
+            result["actual"] = actual
+
+            if call["toolName"] != check["tool_name"]:
+                result["status"] = "FAIL"
+                result["reason"] = "该位置调用的工具与预期不一致"
+
+            elif actual not in {
+                "SUCCEEDED", "NO_MATCH", "FAILED"
+            }:
+                result["reason"] = "工具结果缺失或无法确定"
+
+            elif actual == check["expected"]:
+                result["status"] = "PASS"
+                result["reason"] = "工具返回状态符合预期"
+
+            else:
+                result["status"] = "FAIL"
+                result["reason"] = "工具返回状态与预期不一致"
+
+        results.append(result)
+
+    return results
 
 def run_case(config_path, token=None):
     project_root = Path(__file__).resolve().parents[1]
@@ -194,6 +267,7 @@ def run_case(config_path, token=None):
         "expected_tools": [],
         "status": "ERROR",
         "metric": None,
+        "business_checks": [],
         "error": None,
     }
 
@@ -301,6 +375,24 @@ def run_case(config_path, token=None):
             "matching": "exact_name_type_and_input_parameters",
         }
 
+        business_results = check_tool_outcomes(
+            config.get("business_checks", []),
+            calls,
+        )
+        report["business_checks"] = business_results
+
+        statuses = [
+            report["status"],
+            *[item["status"] for item in business_results],
+        ]
+
+        if "FAIL" in statuses:
+            report["status"] = "FAIL"
+        elif "INCONCLUSIVE" in statuses:
+            report["status"] = "INCONCLUSIVE"
+        else:
+            report["status"] = "PASS"
+
     except EvidenceUnavailable as error:
         report["status"] = "INCONCLUSIVE"
         report["error"] = {
@@ -357,6 +449,14 @@ def main():
 
     print("评测状态：", report["status"])
     print("评分详情：", report["metric"])
+    print(
+        "业务检查：",
+        json.dumps(
+            report["business_checks"],
+            ensure_ascii=False,
+            indent=2,
+        ),
+    )
     print("错误详情：", report["error"])
     print("报告已保存：", output)
 
