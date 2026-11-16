@@ -119,10 +119,12 @@ def save_report(report):
     )
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    output.write_text(
+    temporary = output.with_suffix(".tmp")
+    temporary.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    temporary.replace(output)
 
     return output
 
@@ -163,19 +165,9 @@ def load_live_config(path):
 
     return config
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="通过配置执行真实Agent工具调用评测"
-    )
-    parser.add_argument(
-        "--config",
-        required=True,
-        help="配置文件路径，相对项目根目录或使用绝对路径",
-    )
-    args = parser.parse_args()
-
+def run_case(config_path, token=None):
     project_root = Path(__file__).resolve().parents[1]
-    config_path = Path(args.config)
+    config_path = Path(config_path)
     if not config_path.is_absolute():
         config_path = project_root / config_path
 
@@ -213,7 +205,8 @@ def main():
         report["input"] = config["input"]
         report["expected_tools"] = config["expected_tools"]
 
-        token = getpass.getpass("请输入点评登录Token：").strip()
+        if token is None:
+            token = getpass.getpass("请输入点评登录Token：").strip()
         if not token:
             raise ValueError("登录Token不能为空")
 
@@ -341,13 +334,27 @@ def main():
     counts[report["status"]] = 1
     report["summary"] = {"total": 1, **counts}
 
+    return report
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="通过配置执行真实Agent工具调用评测"
+    )
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="配置文件路径",
+    )
+    args = parser.parse_args()
+
+    report = run_case(args.config)
+
     try:
         output = save_report(report)
     except OSError as error:
         print("报告保存失败：", error)
         return 2
 
-    print("\n场景编号：", report["case_id"])
     print("评测状态：", report["status"])
     print("评分详情：", report["metric"])
     print("错误详情：", report["error"])
@@ -358,7 +365,6 @@ def main():
     if report["status"] == "FAIL":
         return 1
     return 2
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
