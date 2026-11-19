@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "case_id": "ticket_demo_query",
+  "adapter": "json_v1",
+  "endpoint": "http://127.0.0.1:8099/chat",
+  "input": "查询工单DEMO-001",
+  "expected_tools": [
+    {
+      "name": "get_ticket",
+      "input_parameters": {
+        "ticket_id": "DEMO-001"
+      }
+    }
+  ],
+  "business_checks": [
+    {
+      "kind": "tool_outcome",
+      "call_index": 0,
+      "tool_name": "get_ticket",
+      "expected": "SUCCEEDED"
+    }
+  ]
+}
