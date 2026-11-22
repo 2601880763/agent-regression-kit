@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-regression-kit"
+dynamic = ["version"]
+description = "轻量业务 Agent 回归评测工具"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+eval = [
+    "deepeval==4.3.3",
+    "requests>=2.31,<3"
+]
+
+[project.scripts]
+agent-eval-live = "agent_regression_kit.live:main"
+agent-eval-batch = "agent_regression_kit.batch:main"
+agent-eval-compare = "agent_regression_kit.comparison:main"
+
+[project.urls]
+Repository = "https://github.com/2601880763/agent-regression-kit"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent_regression_kit*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "agent_regression_kit.__version__"}
