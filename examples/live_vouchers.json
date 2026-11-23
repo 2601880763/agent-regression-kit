@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "case_id": "shop_vouchers_by_id",
+  "adapter": "spring_sse",
+  "endpoint": "http://127.0.0.1:8085/ai/chat/stream",
+  "input": "请只查询店铺ID为5的优惠券，不要搜索店铺，不要查询店铺详情，不要生成下单预览。",
+  "expected_tools": [
+    {
+      "name": "get_shop_vouchers",
+      "input_parameters": {
+        "shopId": "5"
+      }
+    }
+  ],
+  "business_checks": [
+    {
+      "kind": "tool_outcome",
+      "call_index": 0,
+      "tool_name": "get_shop_vouchers",
+      "expected": "NO_MATCH"
+    }
+  ]
+}

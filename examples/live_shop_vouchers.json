@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "case_id": "shop_detail_then_vouchers",
+  "adapter": "spring_sse",
+  "endpoint": "http://127.0.0.1:8085/ai/chat/stream",
+  "input": "请先查询店铺ID为5的详情，再查询这家店的优惠券，只执行这两项查询。",
+  "expected_tools": [
+    {
+      "name": "get_shop_detail",
+      "input_parameters": {
+        "shopId": "5"
+      }
+    },
+    {
+      "name": "get_shop_vouchers",
+      "input_parameters": {
+        "shopId": "5"
+      }
+    }
+  ],
+  "business_checks": [
+    {
+      "kind": "tool_outcome",
+      "call_index": 0,
+      "tool_name": "get_shop_detail",
+      "expected": "SUCCEEDED"
+    },
+    {
+      "kind": "tool_outcome",
+      "call_index": 1,
+      "tool_name": "get_shop_vouchers",
+      "expected": "NO_MATCH"
+    }
+  ]
+}
