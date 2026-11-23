@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "suite_id": "business_readonly_v1",
+  "interval_seconds": 30,
+  "cases": [
+    "live_search.json",
+    "live_tea.json",
+    "live_coffee.json",
+    "live_shop_detail.json",
+    "live_vouchers.json",
+    "live_shop_vouchers.json"
+  ]
+}

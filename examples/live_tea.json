@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "case_id": "search_tea_keyword",
+  "endpoint": "http://127.0.0.1:8085/ai/chat/stream",
+  "input": "请只搜索名字包含“茶”的店铺，搜索关键词请使用“茶”，暂时不要查询详情或优惠券。",
+  "expected_tools": [
+    {
+      "name": "search_shops",
+      "input_parameters": {
+        "keyword": "茶"
+      }
+    }
+  ],
+  "business_checks": [
+    {
+      "kind": "tool_outcome",
+      "call_index": 0,
+      "tool_name": "search_shops",
+      "expected": "SUCCEEDED"
+    }
+  ]
+}
